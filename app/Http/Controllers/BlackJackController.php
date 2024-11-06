@@ -49,6 +49,18 @@ class BlackjackController extends Controller
         $playerHand[] = $this->dealCard($deck);
         $playerTotal = $this->calculateHandValue($playerHand);
 
+        // Si el jugador se pasa de 21, termina el juego
+        if ($playerTotal > 21) {
+            return redirect()->route('blackjack.result', [
+                'resultMessage' => 'Dealer wins',
+                'user' => auth()->user(),
+                'playerHand' => $playerHand,
+                'dealerHand' => json_decode($request->input('dealer_hand'), true),
+                'playerTotal' => $playerTotal,
+                'dealerTotal' => json_decode($request->input('dealer_total'))
+            ]);
+        }
+
         return view('blackjack.game', [
             'user' => auth()->user(),
             'bet' => $request->input('bet'),
@@ -60,19 +72,30 @@ class BlackjackController extends Controller
         ]);
     }
 
-    public function dealerTurn(Request $request)
+    public function stand(Request $request)
     {
         $deck = json_decode($request->input('deck'), true);
+        $playerHand = json_decode($request->input('player_hand'), true);
         $dealerHand = json_decode($request->input('dealer_hand'), true);
         $playerTotal = $request->input('player_total');
         $bet = $request->input('bet');
 
-        // El dealer toma cartas hasta alcanzar 17
-        while ($this->calculateHandValue($dealerHand) < 17) {
-            $dealerHand[] = $this->dealCard($deck);
+        // Mostrar las cartas del dealer con un pequeño retraso
+        $dealerTotal = $this->calculateHandValue($dealerHand);
+        $dealerMoves = [];
+        foreach ($dealerHand as $card) {
+            $dealerMoves[] = $card;
+            usleep(1000000); // Retardo de 1 segundo entre cartas
         }
 
-        $dealerTotal = $this->calculateHandValue($dealerHand);
+        // El dealer toma cartas hasta alcanzar 17
+        while ($dealerTotal < 17) {
+            $dealerHand[] = $this->dealCard($deck);
+            $dealerMoves[] = end($dealerHand);
+            $dealerTotal = $this->calculateHandValue($dealerHand);
+            usleep(1000000); // Retardo de 1 segundo entre cartas
+        }
+
         $resultMessage = $this->getGameResult($playerTotal, $dealerTotal);
 
         // Actualizar el saldo del usuario
@@ -87,8 +110,8 @@ class BlackjackController extends Controller
 
         return view('blackjack.result', [
             'user' => $user,
-            'playerHand' => $request->input('player_hand'),
-            'dealerMoves' => $dealerHand,
+            'playerHand' => $playerHand,
+            'dealerMoves' => $dealerMoves,
             'playerTotal' => $playerTotal,
             'dealerTotal' => $dealerTotal,
             'resultMessage' => $resultMessage

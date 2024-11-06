@@ -13,9 +13,9 @@
 
                     <div>
                         <h6>Your Cards:</h6>
-                        @foreach ($playerHand as $card)
+                        {{-- @foreach ($playerHand as $card)
                             <img src="{{ asset($card['image']) }}" alt="{{ $card['rank'] }} of {{ $card['suit'] }}" width="70" class="me-2">
-                        @endforeach
+                        @endforeach --}}
                     </div>
 
                     <div class="mt-3">
