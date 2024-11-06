@@ -29,7 +29,10 @@ Route::controller(LoginRegisterController::class)->group(function() {
     Route::post('/logout', 'logout')->name('logout');
 });
 
-Route::get('/blackjack', [BlackjackController::class, 'index'])->name('blackjack.index');
-Route::post('/blackjack/start', [BlackjackController::class, 'startGame'])->name('blackjack.start');
-Route::post('/blackjack/hit', [BlackjackController::class, 'hit'])->name('blackjack.hit');
-Route::post('/blackjack/dealerTurn', [BlackjackController::class, 'dealerTurn'])->name('blackjack.dealerTurn');
+Route::middleware('auth')->group(function () {
+    Route::get('/blackjack', [BlackjackController::class, 'index'])->name('blackjack.index');
+    Route::post('/blackjack/start', [BlackjackController::class, 'start'])->name('blackjack.start');
+    Route::post('/blackjack/hit', [BlackjackController::class, 'hit'])->name('blackjack.hit');
+    Route::post('/blackjack/dealer-turn', [BlackjackController::class, 'dealerTurn'])->name('blackjack.dealerTurn');
+    Route::get('/blackjack/result', [BlackjackController::class, 'result'])->name('blackjack.result');
+});

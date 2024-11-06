@@ -18,15 +18,15 @@
                 @endif    
 
                 <div class="d-flex justify-content-around mt-4">
-                    {{-- <a href="{{ route('ruleta') }}" class="btn btn-primary">
+                    <a href="{{ route('blackjack.index') }}" class="btn btn-primary">
                         Ruleta
-                    </a> --}}
-                    <a href="{{ redirect('blackjack') }}" class="btn btn-success">
+                    </a>
+                    <a href="{{ route('blackjack.index') }}" class="btn btn-success">
                         BlackJack
                      </a>
-                    {{--<a href="{{ route('otros') }}" class="btn btn-warning">
+                    <a href="{{ route('blackjack.index') }}" class="btn btn-warning">
                         Otros
-                    </a> --}}
+                    </a>
                 </div>
                 
             </div>

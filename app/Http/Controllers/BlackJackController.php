@@ -1,189 +1,155 @@
 <?php
 namespace App\Http\Controllers;
 
-use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 class BlackjackController extends Controller
 {
-    // Función para mostrar la página del juego
     public function index()
     {
-        return view('blackjack.index', ['user' => Auth::user()]);
+        // Obtener el saldo del usuario
+        $user = auth()->user();
+        return view('blackjack.index', ['user' => $user, 'bet' => 0, 'playerHand' => [], 'dealerHand' => [], 'playerTotal' => 0, 'dealerTotal' => 0]);
     }
 
-    // Función para iniciar una partida de Blackjack
-    public function startGame(Request $request)
+    public function start(Request $request)
     {
-        $user = Auth::user(); // Obtener el usuario autenticado
-        $bet = $request->input('bet'); // Obtener la apuesta del jugador
+        $user = auth()->user();
+        $bet = $request->input('bet');
 
-        // Validar que el jugador tenga suficiente saldo
-        if ($user->balance < $bet) {
-            return redirect()->route('blackjack.index')->withErrors(['error' => 'Insufficient balance to place the bet.']);
+        if ($bet > $user->balance) {
+            return redirect()->route('blackjack.index')->with('error', 'Apuesta mayor que el saldo disponible.');
         }
 
-        // Crear un mazo de cartas (barajarlas)
-        $deck = $this->createDeck();
+        // Barajar y repartir cartas
+        $deck = $this->shuffleDeck();
+        $playerHand = [$this->dealCard($deck), $this->dealCard($deck)];
+        $dealerHand = [$this->dealCard($deck), $this->dealCard($deck)];
 
-        // Repartir las cartas
-        $playerHand = $this->dealCards($deck);
-        $dealerHand = $this->dealCards($deck);
+        $playerTotal = $this->calculateHandValue($playerHand);
+        $dealerTotal = $this->calculateHandValue($dealerHand);
 
         return view('blackjack.game', [
             'user' => $user,
             'bet' => $bet,
-            'deck' => $deck,
             'playerHand' => $playerHand,
             'dealerHand' => $dealerHand,
-            'playerTotal' => $this->calculateTotal($playerHand),
-            'dealerTotal' => $this->calculateTotal($dealerHand),
+            'playerTotal' => $playerTotal,
+            'dealerTotal' => $dealerTotal,
+            'deck' => $deck
         ]);
     }
 
-    // Función para calcular el total de una mano
-    public function calculateTotal($hand)
+    public function hit(Request $request)
+    {
+        $deck = json_decode($request->input('deck'), true);
+        $playerHand = json_decode($request->input('player_hand'), true);
+
+        // Repartir carta al jugador
+        $playerHand[] = $this->dealCard($deck);
+        $playerTotal = $this->calculateHandValue($playerHand);
+
+        return view('blackjack.game', [
+            'user' => auth()->user(),
+            'bet' => $request->input('bet'),
+            'playerHand' => $playerHand,
+            'dealerHand' => json_decode($request->input('dealer_hand'), true),
+            'playerTotal' => $playerTotal,
+            'dealerTotal' => json_decode($request->input('dealer_total')),
+            'deck' => $deck
+        ]);
+    }
+
+    public function dealerTurn(Request $request)
+    {
+        $deck = json_decode($request->input('deck'), true);
+        $dealerHand = json_decode($request->input('dealer_hand'), true);
+        $playerTotal = $request->input('player_total');
+        $bet = $request->input('bet');
+
+        // El dealer toma cartas hasta alcanzar 17
+        while ($this->calculateHandValue($dealerHand) < 17) {
+            $dealerHand[] = $this->dealCard($deck);
+        }
+
+        $dealerTotal = $this->calculateHandValue($dealerHand);
+        $resultMessage = $this->getGameResult($playerTotal, $dealerTotal);
+
+        // Actualizar el saldo del usuario
+        $user = auth()->user();
+        if ($resultMessage == 'Player wins') {
+            $user->balance += $bet;
+        } elseif ($resultMessage == 'Dealer wins') {
+            $user->balance -= $bet;
+        }
+
+        //$user->save();
+
+        return view('blackjack.result', [
+            'user' => $user,
+            'playerHand' => $request->input('player_hand'),
+            'dealerMoves' => $dealerHand,
+            'playerTotal' => $playerTotal,
+            'dealerTotal' => $dealerTotal,
+            'resultMessage' => $resultMessage
+        ]);
+    }
+
+    private function shuffleDeck()
+    {
+        $suits = ['hearts', 'diamonds', 'clubs', 'spades'];
+        $values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+        $deck = [];
+
+        foreach ($suits as $suit) {
+            foreach ($values as $value) {
+                $deck[] = ['suit' => $suit, 'rank' => $value, 'image' => "images/{$value}_of_{$suit}.png"];
+            }
+        }
+
+        shuffle($deck);
+        return $deck;
+    }
+
+    private function dealCard(&$deck)
+    {
+        return array_pop($deck);
+    }
+
+    private function calculateHandValue($hand)
     {
         $total = 0;
         $aces = 0;
 
         foreach ($hand as $card) {
-            if (in_array($card['rank'], ['2', '3', '4', '5', '6', '7', '8', '9', '10'])) {
-                $total += (int)$card['rank'];
-            } elseif (in_array($card['rank'], ['J', 'Q', 'K'])) {
-                $total += 10;
+            if (is_numeric($card['rank'])) {
+                $total += (int) $card['rank'];
             } elseif ($card['rank'] == 'A') {
-                $total += 11;
                 $aces++;
+                $total += 11;
+            } else {
+                $total += 10;
             }
         }
 
         while ($total > 21 && $aces > 0) {
-            $total -= 10; // Convertir un As de 11 a 1
+            $total -= 10;
             $aces--;
         }
 
         return $total;
     }
 
-    // Función para crear un mazo de cartas
-    public function createDeck()
+    private function getGameResult($playerTotal, $dealerTotal)
     {
-        $suits = ['hearts', 'diamonds', 'clubs', 'spades'];
-        $ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
-        $deck = [];
-
-        foreach ($suits as $suit) {
-            foreach ($ranks as $rank) {
-                $imagePath = "images/cards/{$rank}_of_{$suit}.png"; 
-                $imageUrl = asset($imagePath);
-
-                if (!file_exists(public_path($imagePath))) {
-                    $imageUrl = asset("images/cards/default.png"); 
-                }
-
-                $deck[] = [
-                    'rank' => $rank,
-                    'suit' => $suit,
-                    'image' => $imageUrl,
-                ];
-            }
-        }
-
-        shuffle($deck); // Barajar el mazo
-        return $deck;
-    }
-
-    // Función para permitir al jugador pedir una carta más
-    public function hit(Request $request)
-    {
-        $playerHand = json_decode($request->input('player_hand'), true);
-        $deck = json_decode($request->input('deck'), true);
-
-        if (!is_array($playerHand) || !is_array($deck)) {
-            return redirect()->route('blackjack.index')->withErrors(['error' => 'Invalid data received.']);
-        }
-
-        // Repartir una carta al jugador
-        $randomCardIndex = array_rand($deck); 
-        $randomCard = $deck[$randomCardIndex]; 
-        unset($deck[$randomCardIndex]); 
-
-        $playerHand[] = $randomCard;
-
-        $playerTotal = $this->calculateTotal($playerHand);
-
-        // Verificar si el jugador se pasa de 21
         if ($playerTotal > 21) {
-            return $this->endGame('You busted! You lose.', -$request->input('bet'));
-        }
-
-        return view('blackjack.game', [
-            'playerHand' => $playerHand,
-            'deck' => array_values($deck),
-            'playerTotal' => $playerTotal,
-            'dealerHand' => $request->input('dealer_hand'),
-            'dealerTotal' => $request->input('dealer_total'),
-            'user' => Auth::user(),
-            'bet' => $request->input('bet')
-        ]);
-    }
-
-    // Función para el turno de la banca
-    public function dealerTurn(Request $request)
-    {
-        $dealerHand = $request->input('dealer_hand');
-        $deck = $request->input('deck');
-
-        // La banca debe pedir cartas hasta tener al menos 17 puntos
-        while ($this->calculateTotal($dealerHand) < 17) {
-            $randomCardIndex = array_rand($deck); 
-            $randomCard = $deck[$randomCardIndex]; 
-            unset($deck[$randomCardIndex]); 
-            $dealerHand[] = $randomCard;
-        }
-
-        $dealerTotal = $this->calculateTotal($dealerHand);
-
-        // Determinar el ganador
-        return $this->determineWinner($request->input('player_total'), $dealerTotal, $request->input('bet'));
-    }
-
-    // Función para determinar el ganador
-    public function determineWinner($playerTotal, $dealerTotal, $bet)
-    {
-        $user = Auth::user();
-
-        if ($playerTotal > 21) {
-            return $this->endGame('You busted! You lose.', -$bet);
-        } elseif ($dealerTotal > 21) {
-            return $this->endGame('Dealer busted! You win.', $bet);
-        } elseif ($playerTotal > $dealerTotal) {
-            return $this->endGame('You win!', $bet);
+            return 'Dealer wins';
+        } elseif ($dealerTotal > 21 || $playerTotal > $dealerTotal) {
+            return 'Player wins';
         } elseif ($playerTotal < $dealerTotal) {
-            return $this->endGame('Dealer wins.', -$bet);
+            return 'Dealer wins';
         } else {
-            return $this->endGame('It\'s a tie!', 0);
+            return 'Draw';
         }
-    }
-
-    // Función para finalizar el juego y actualizar el balance
-    private function endGame($message, $balanceChange)
-    {
-        $user = Auth::user();
-        $user->balance += $balanceChange;
-
-        return redirect()->route('blackjack.index')->with('message', $message);
-    }
-
-    // Función para repartir cartas
-    public function dealCards(&$deck)
-    {
-        $hand = [];
-        $hand[] = array_pop($deck);
-        $hand[] = array_pop($deck);
-
-        return $hand;
     }
 }
